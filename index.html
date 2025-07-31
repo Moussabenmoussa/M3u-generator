@@ -1,1 +1,74 @@
-<div><!DOCTYPE html><br/><html lang="ar"><br/><head><br/>  <meta charset="UTF-8"><br/>  <title>روابط IPTV من Pastebin</title><br/>  <style><br/>    body { font-family: Tahoma; background: #f4f4f4; padding: 20px; direction: rtl; }<br/>    h2 { color: #2c3e50; }<br/>    .link-box { background: #fff; border: 1px solid #ccc; margin: 10px 0; padding: 15px; border-radius: 8px; }<br/>    .status { font-size: 0.9em; color: #888; margin-top: 5px; }<br/>    code { background: #eef; padding: 5px 8px; display: block; margin-top: 5px; word-break: break-all; }<br/>  </style><br/></head><br/><body><br/>  <h2>📡 روابط IPTV من قناة Telegram</h2><br/>  <div id="links">جاري تحميل الروابط...</div><div></div>  <script><br/>    async function fetchPastebinLinks() {<br/>      const pastebinRawURL = "https://pastebin.com/raw/kMEBV47D";<br/>      const container = document.getElementById("links");<br/>      container.innerHTML = "";<div></div>      try {<br/>        const res = await fetch(pastebinRawURL);<br/>        if (!res.ok) throw new Error("فشل في جلب المحتوى");<br/>        const text = await res.text();<br/>        const links = text.split("\n").filter(line => line.trim().startsWith("http"));<div></div>        if (links.length === 0) {<br/>          container.innerHTML = "<p>لا توجد روابط M3U في المحتوى الحالي.</p>";<br/>          return;<br/>        }<div></div>        for (let url of links) {<br/>          try {<br/>            const check = await fetch(url);<br/>            const status = check.ok ? "✅ رابط فعال" : "❌ الرابط غير متاح";<br/>            container.innerHTML += `<br/>              <div class="link-box"><br/>                <strong>${status}</strong><br/>                <code>${url}</code><br/>                <div class="status">المصدر: ${new URL(url).hostname}</div><br/>              </div><br/>            `;<br/>          } catch {<br/>            container.innerHTML += `<br/>              <div class="link-box"><br/>                ⚠️ خطأ في جلب الرابط:<br/>                <code>${url}</code><br/>              </div><br/>            `;<br/>          }<br/>        }<br/>      } catch (err) {<br/>        container.innerHTML = `<p>حدث خطأ أثناء جلب روابط Pastebin: ${err.message}</p>`;<br/>      }<br/>    }<div></div>    fetchPastebinLinks();<br/>  </script><br/></body><br/></html></div>
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>رابط M3U عشوائي</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
+      text-align: center;
+      padding: 50px;
+    }
+    h1 {
+      color: #222;
+    }
+    #linkDisplay {
+      margin-top: 20px;
+      font-size: 18px;
+      padding: 10px;
+      background-color: #e0f7fa;
+      border-radius: 8px;
+      word-break: break-word;
+    }
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      margin-top: 30px;
+    }
+    button:hover {
+      background-color: #1976d2;
+    }
+  </style>
+</head>
+<body>
+  <h1>📺 احصل على رابط M3U واحد</h1>
+  <div id="linkDisplay">اضغط الزر لعرض رابط</div>
+  <button onclick="showNextLink()">🎯 عرض رابط جديد</button>
+
+  <script>
+    const fileURL = "https://moussabenmoussa.github.io/M3u-generator/links.txt";
+    let links = [];
+    let currentIndex = 0;
+
+    fetch(fileURL)
+      .then(response => response.text())
+      .then(text => {
+        links = text.split('\n').filter(link => link.trim() !== "");
+        if (links.length === 0) {
+          document.getElementById("linkDisplay").textContent = "❌ لا توجد روابط متاحة.";
+        } else {
+          document.getElementById("linkDisplay").textContent = "✅ جاهز! اضغط للحصول على رابط.";
+        }
+      })
+      .catch(error => {
+        document.getElementById("linkDisplay").textContent = "⚠️ خطأ في تحميل الروابط.";
+      });
+
+    function showNextLink() {
+      if (links.length === 0) return;
+
+      // عرض الرابط الحالي
+      document.getElementById("linkDisplay").textContent = links[currentIndex];
+
+      // تحديث الفهرس (مع التكرار عند النهاية)
+      currentIndex = (currentIndex + 1) % links.length;
+    }
+  </script>
+</body>
+</html>
