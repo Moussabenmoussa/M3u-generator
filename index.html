@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" class="scroll-smooth" dir="ltr">
 
@@ -691,9 +692,24 @@
                     </button>
 
                     <p class="text-center text-xs text-slate-400 mt-4 flex items-center justify-center gap-1.5">
-                        <i class="fas fa-clock text-[10px]"></i>
-                        Rate limited: 1 request per 24 hours
+                        <i class="fas fa-shield-halved text-[10px]"></i>
+                        Protected: 1 generation every 24 hours
                     </p>
+                </div>
+
+                <!-- Cooldown Overlay (shown when rate-limited) -->
+                <div id="genCooldownOverlay" class="hidden p-6 text-center" style="display:none;">
+                    <div class="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl">
+                        <i class="fas fa-hourglass-half"></i>
+                    </div>
+                    <h4 class="text-lg font-extrabold text-slate-900 dark:text-white mb-2">Please Wait Before Generating Again</h4>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">You can generate new servers once every 24 hours to ensure fair usage for everyone.</p>
+                    <div class="inline-flex items-center gap-3 px-5 py-3 bg-slate-100 dark:bg-surface-900 rounded-xl border border-slate-200 dark:border-white/10">
+                        <i class="fas fa-clock text-brand-600"></i>
+                        <span class="text-sm font-bold text-slate-700 dark:text-white">Next generation in:</span>
+                        <span id="genCooldownTimer" class="text-lg font-extrabold text-brand-600 font-mono">--:--:--</span>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-4">This protection ensures server availability for all users.</p>
                 </div>
             </div>
         </div>
@@ -1616,9 +1632,147 @@
 
     /* ====================== M3U/XTREAM GENERATOR ====================== */
     var GEN_API = 'https://empreinte-2cm5.onrender.com';
+    var GEN_COOLDOWN_KEY = 'darplayer_gen_cooldown';
+    var GEN_FP_KEY = 'darplayer_gen_fp';
+    var GEN_24H_MS = 24 * 60 * 60 * 1000; // 24 hours in ms
     var genLastServerData = null;
     var genSlider = document.getElementById('genCountSlider');
     var genCountDisplay = document.getElementById('genCountDisplay');
+    var genCooldownInterval = null;
+
+    /* ---- Fingerprint Generation (mirrors security.js approach) ---- */
+    function genGetFingerprint() {
+        try {
+            var stored = localStorage.getItem(GEN_FP_KEY);
+            if (stored) return stored;
+        } catch(e) {}
+        // Use the global fingerprint from security.js if available
+        if (window.userFingerprint) {
+            try { localStorage.setItem(GEN_FP_KEY, window.userFingerprint); } catch(e) {}
+            return window.userFingerprint;
+        }
+        // Generate our own robust fingerprint
+        var fp = [];
+        fp.push(navigator.userAgent || '');
+        fp.push(screen.width + 'x' + screen.height + 'x' + screen.colorDepth);
+        fp.push(navigator.language || '');
+        fp.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+        fp.push(navigator.hardwareConcurrency || '');
+        fp.push(navigator.platform || '');
+        fp.push(navigator.maxTouchPoints || 0);
+        try { fp.push(new Date().getTimezoneOffset()); } catch(e) {}
+        var hash = 0;
+        var str = fp.join('||');
+        for (var i = 0; i < str.length; i++) {
+            var ch = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + ch;
+            hash = hash & hash;
+        }
+        var result = 'dp_' + Math.abs(hash).toString(36) + '_' + str.length.toString(36);
+        try { localStorage.setItem(GEN_FP_KEY, result); } catch(e) {}
+        return result;
+    }
+
+    /* ---- Cooldown Check (localStorage-based) ---- */
+    function genGetCooldownEnd() {
+        try {
+            var data = localStorage.getItem(GEN_COOLDOWN_KEY);
+            if (!data) return 0;
+            var parsed = JSON.parse(data);
+            return parsed.endsAt || 0;
+        } catch(e) { return 0; }
+    }
+
+    function genSetCooldown() {
+        var endsAt = Date.now() + GEN_24H_MS;
+        try {
+            localStorage.setItem(GEN_COOLDOWN_KEY, JSON.stringify({
+                endsAt: endsAt,
+                fp: genGetFingerprint()
+            }));
+        } catch(e) {}
+    }
+
+    function genIsOnCooldown() {
+        var endsAt = genGetCooldownEnd();
+        return Date.now() < endsAt;
+    }
+
+    function genGetRemainingMs() {
+        var endsAt = genGetCooldownEnd();
+        var remaining = endsAt - Date.now();
+        return remaining > 0 ? remaining : 0;
+    }
+
+    function genFormatRemaining(ms) {
+        if (ms <= 0) return '00:00:00';
+        var totalSec = Math.floor(ms / 1000);
+        var h = Math.floor(totalSec / 3600);
+        var m = Math.floor((totalSec % 3600) / 60);
+        var s = totalSec % 60;
+        return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    /* ---- Cooldown UI Update ---- */
+    function genShowCooldownUI() {
+        var panel = document.querySelector('#genCountSlider') ? document.querySelector('#genCountSlider').closest('.p-8') : null;
+        var btn = document.getElementById('genBtn');
+        var overlay = document.getElementById('genCooldownOverlay');
+        var timerEl = document.getElementById('genCooldownTimer');
+        if (!overlay || !panel) return;
+
+        // Hide the normal panel content, show cooldown overlay
+        var children = panel.children;
+        for (var i = 0; i < children.length; i++) {
+            if (children[i].id !== 'genCooldownOverlay') {
+                children[i].style.display = 'none';
+            }
+        }
+        overlay.classList.remove('hidden');
+        overlay.style.display = '';
+
+        // Start countdown timer
+        if (genCooldownInterval) clearInterval(genCooldownInterval);
+        function updateTimer() {
+            var remaining = genGetRemainingMs();
+            if (remaining <= 0) {
+                clearInterval(genCooldownInterval);
+                genCooldownInterval = null;
+                genRestoreUI();
+                return;
+            }
+            if (timerEl) timerEl.textContent = genFormatRemaining(remaining);
+        }
+        updateTimer();
+        genCooldownInterval = setInterval(updateTimer, 1000);
+    }
+
+    function genRestoreUI() {
+        var panel = document.querySelector('#genCountSlider') ? document.querySelector('#genCountSlider').closest('.p-8') : null;
+        var btn = document.getElementById('genBtn');
+        var overlay = document.getElementById('genCooldownOverlay');
+        if (!panel) return;
+
+        // Restore all panel children
+        var children = panel.children;
+        for (var i = 0; i < children.length; i++) {
+            if (children[i].id !== 'genCooldownOverlay') {
+                children[i].style.display = '';
+            }
+        }
+        if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
+        if (btn) btn.disabled = false;
+    }
+
+    /* ---- Initialize Cooldown State on Page Load ---- */
+    (function genInitCooldown() {
+        // Also sync with server-side fingerprint
+        var fp = genGetFingerprint();
+        if (genIsOnCooldown()) {
+            // Small delay to let DOM fully render
+            setTimeout(function() { genShowCooldownUI(); }, 500);
+        }
+    })();
 
     if (genSlider) {
         genSlider.addEventListener('input', function() {
@@ -1790,18 +1944,28 @@
     }
 
     async function generateServers() {
+        // ---- Client-side cooldown check FIRST ----
+        if (genIsOnCooldown()) {
+            genShowCooldownUI();
+            showToast('Please wait 24 hours between generations.', 'error');
+            return;
+        }
+
         var count = genSlider.value;
         var btn = document.getElementById('genBtn');
         var btnText = document.getElementById('genBtnText');
         var regenIcon = document.getElementById('genRegenIcon');
+        var fp = genGetFingerprint();
         btn.disabled = true;
         btnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
         if (regenIcon) regenIcon.classList.add('fa-spin');
         document.getElementById('genErrorSection').style.display = 'none';
         try {
-            var res = await fetch(GEN_API + '/api/generate_xtream?count=' + count);
+            var res = await fetch(GEN_API + '/api/generate_xtream?count=' + count + '&fingerprint=' + encodeURIComponent(fp));
             var data = await res.json();
             if (data.status === 'ok' && data.lines && data.lines.length) {
+                // ---- Set local cooldown on success ----
+                genSetCooldown();
                 genLastServerData = data.lines;
                 document.getElementById('genResultsCount').textContent = data.lines.length;
                 genRenderAllServers(data.lines);
@@ -1809,7 +1973,16 @@
                 document.getElementById('genFeaturesRow').style.display = 'none';
                 showToast(data.lines.length === 1 ? '1 server generated!' : data.lines.length + ' servers generated!', 'success');
             } else if (data.status === 'limit_reached') {
-                document.getElementById('genErrorMsg').textContent = data.message || 'Rate limit reached. Please try again later.';
+                // ---- Server says rate limited - set local cooldown ----
+                var serverNextAllowed = data.next_allowed_at ? new Date(data.next_allowed_at).getTime() : (Date.now() + GEN_24H_MS);
+                try {
+                    localStorage.setItem(GEN_COOLDOWN_KEY, JSON.stringify({
+                        endsAt: serverNextAllowed,
+                        fp: fp
+                    }));
+                } catch(e) {}
+                genShowCooldownUI();
+                document.getElementById('genErrorMsg').textContent = data.message || 'Rate limit reached. You can generate once every 24 hours.';
                 if (data.next_allowed_at) {
                     document.getElementById('genRetryTime').textContent = 'Next allowed: ' + new Date(data.next_allowed_at).toLocaleString();
                     document.getElementById('genRetryTime').style.display = 'block';
